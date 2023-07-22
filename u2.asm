@@ -133,7 +133,7 @@ StartUp
 	jsr screen_init
 
 ;	jsr print_footer
-	jsr keyc
+	jsr display_common
 
 mainloop
 
@@ -153,6 +153,8 @@ mainloop
 	bge @upper
 	and #~$20
 @upper
+	cmp #$1b ; esc
+	beq quit
 	cmp #'Q'
 	beq quit
 	ldx #@ksize-2
@@ -175,10 +177,10 @@ mainloop
 ; : -> write to register
 ; i -> clear interrupts
 
-@k	dw '0','1','2','3','C'
+@k	dw '0','1','2','3','C','R','T'
 @ksize	equ *-@k
 
-@d	dw key0,key1,key2,key3,keyc
+@d	dw key0,key1,key2,key3,display_common,display_rx,display_tx
 
 
 
@@ -248,15 +250,25 @@ table
 	dw @rts
 	dw byte6
 
+
+XTRA_NOP	equ 0
+XTRA_DEC	equ 2
+XTRA_SN_SR	equ 4
+XTRA_SN_IR	equ 6
+XTRA_IR		equ 8
+
 extra	dw print_cr
 	dw do_xtra_dec
-	dw do_xtra_sr
+	dw do_xtra_sn_sr
+	dw do_xtra_sn_ir
+	dw do_xtra_ir
 
 @rts
 	rts
 	modend
 
 byte1
+	stz scratch+1 ; so XTRA_DEC will work
 	lda >IDM_DR
 	sta scratch
 	jmp print_hex
@@ -305,7 +317,7 @@ do_xtra_dec
 	jsr print
 	jmp print_cr
 
-do_xtra_sr	module
+do_xtra_sn_sr	module
 	; print the socket status
 	lda #' '
 	jsr print
@@ -319,9 +331,9 @@ do_xtra_sr	module
 	bpl @loop
 	jmp print_cr
 @match
-	lda (@ltable,x)
+	lda @ltable,x
 	sta str_ptr
-	lda (@ltable+1,x)
+	lda @ltable+1,x
 	sta str_ptr+1
 	jsr print_str
 	jmp print_cr
@@ -351,12 +363,99 @@ do_xtra_sr	module
 	modend
 
 
+do_xtra_sn_ir	module
+	mx %11
 
-XTRA_NOP	equ 0
-XTRA_DEC	equ 2
-XTRA_SR		equ 4
+	lda #'-'
+	ldx #7
+@loop1	sta @str,x
+	dex
+	bpl @loop1
 
-keyc	module
+
+	lda scratch
+	ldx #7
+
+@loop2
+	lsr
+	bcc @next
+
+	phx
+	pha
+	txa
+	lda @t,x
+	sta @str,x
+	pla
+	plx
+
+@next	dex
+	bpl @loop2
+
+	lda #' '
+	jsr print
+
+	pea @str
+	pla
+	sta str_ptr
+	pla
+	sta str_ptr+1
+
+	jsr print_str
+	jmp print_cr
+
+@t	db '???STRDC'
+@str	db '--------',0
+
+	modend
+
+do_xtra_ir	module
+	mx %11
+
+	lda #'-'
+	ldx #7
+@loop1	sta @str,x
+	dex
+	bpl @loop1
+
+
+	lda scratch
+	ldx #7
+
+@loop2
+	lsr
+	bcc @next
+
+	phx
+	pha
+	txa
+	lda @t,x
+	sta @str,x
+	pla
+	plx
+
+@next	dex
+	bpl @loop2
+
+	lda #' '
+	jsr print
+
+	pea @str
+	pla
+	sta str_ptr
+	pla
+	sta str_ptr+1
+
+	jsr print_str
+	jmp print_cr
+
+@t	db 'CUP?3210'
+@str	db '--------',0
+
+	modend
+
+
+
+display_common	module
 	mx %11
 
 	jsr screen_clear
@@ -404,10 +503,10 @@ keyc	module
 @r2	db	"Subnet:         ",0,$05,4,0
 @r3	db	"MAC:            ",0,$09,6,0
 @r4	db	"IP:             ",0,$0f,4,0
-@r5	db	"IR:             ",0,$15,1,0
+@r5	db	"IR:             ",0,$15,1,XTRA_IR
 @r6	db	"IMR:            ",0,$16,1,0
 @r7	db	"RTR:            ",0,$17,2,XTRA_DEC
-@r8	db 	"RCR             ",0,$19,1,0
+@r8	db 	"RCR             ",0,$19,1,XTRA_DEC
 @r9	db	"RMSR:           ",0,$1a,1,0
 @r10	db	"TMSR:           ",0,$1b,1,0
 @r11	db	"PPPoE Auth      ",0,$1c,2,0
@@ -511,8 +610,8 @@ reg
 ;; c-string, offset, bytes, extra
 @r0	db	"MR:             ",0,$00,1,0
 @r1	db	"CR:             ",0,$01,1,0
-@r2	db	"IR:             ",0,$02,1,0
-@r3	db	"SR:             ",0,$03,1,0
+@r2	db	"IR:             ",0,$02,1,XTRA_SN_IR
+@r3	db	"SR:             ",0,$03,1,XTRA_SN_SR
 @r4	db	"Port:           ",0,$04,2,XTRA_DEC
 @r5	db	"Dest MAC:       ",0,$06,6,0
 @r6	db	"Dest IP:        ",0,$0c,4,0
@@ -524,31 +623,61 @@ reg
 @r12	db	"Fragment:       ",0,$2d,2,0 ; intentionally out of order
 @r13	db	"RX Buf Size:    ",0,$1e,1,0
 @r14	db	"TX Buf Size:    ",0,$1f,1,0
-@r15	db	"TX FSR:         ",0,$20,2,0
+@r15	db	"TX FSR:         ",0,$20,2,XTRA_DEC
 @r16	db	"TX RD:          ",0,$22,2,0
 @r17	db	"TX WR:          ",0,$24,2,0
-@r18	db	"RX RSR:         ",0,$26,2,0
+@r18	db	"RX RSR:         ",0,$26,2,XTRA_DEC
 @r19	db	"RX RD:          ",0,$28,2,0
 @r20	db	"RX WR:          ",0,$2a,2,0
 
 
-dump_tx
+display_tx
+
+	jsr screen_clear
+
+	pea @header
+	pla
+	sta str_ptr
+	pla
+	sta str_ptr+1
+	jsr print_str
+	jsr print_cr
+
 	lda #$40
 	sta >IDM_AR
 	lda #0
 	sta >IDM_AR+1
-	bra dump_common
 
-dump_rx
+	bra dump_common
+@header db "Transmit Buffer",0
+
+
+
+display_rx
+
+	jsr screen_clear
+
+	pea @header
+	pla
+	sta str_ptr
+	pla
+	sta str_ptr+1
+	jsr print_str
+	jsr print_cr
+
 	lda #$60
 	sta >IDM_AR
 	lda #0
 	sta >IDM_AR+1
 
+	bra dump_common
+@header db "Receive Buffer",0
+
+
 dump_common
 
-	ldy #18
-	ldx #8
+
+	ldy #10
 @yloop
 	phy
 
@@ -559,31 +688,72 @@ dump_common
 	lda #' '
 	jsr print
 
+	ldx #8
 @xloop1
 	lda >IDM_DR
+	sta xbuffer,x
 	phx
 	jsr print_hex
+	plx
 	dex
 	bne @xloop1
 
-	lda #' '
-	jsr print
+;	lda #' '
+;	jsr print
+	inc screen_x
 
 	ldx #8
 @xloop2
 	lda >IDM_DR
+	sta xbuffer+8,x
 	phx
 	jsr print_hex
+	plx
 	dex
 	bne @xloop2
 
 	jsr print_cr
+
+	; print the hexdump under it
+	lda #5
+	sta screen_x
+	ldx #8
+@xloop3
+	phx
+	lda xbuffer,x
+	jsr @printc
+	plx
+	dex
+	bne @xloop3
+
+	inc screen_x
+	ldx #8
+@xloop4
+	phx
+	lda xbuffer+8,x
+	jsr @printc
+	plx
+	dex
+	bne @xloop4
+	jsr print_cr
+
 	ply
 	dey
 	bne @yloop
 
+	jmp print_footer
 
-	rts
+@printc
+	inc screen_x
+	cmp #$7f
+	bcs @noc
+	cmp #$20
+	bcc @noc
+	jmp print
+@noc
+	lda #'.'
+	jmp print
+
 	section Screen
 ; 
 screen_init
@@ -701,35 +871,7 @@ print_dec
 
 	short m,x
 	jmp print_dec_helper
-;	lda <bcd+1
-;	beq @2
-;	clc
-;	adc #'0'
-;	jsr print
-;	lda <bcd
-;	lsr
-;	lsr
-;	lsr
-;	lsr
-;	clc
-;	adc #'0'
-;	jsr print
-;	bra @1
-;@2	lda <bcd
-;	lsr
-;	lsr
-;	lsr
-;	lsr
-;	beq @1
-;	clc
-;	adc #'0'
-;	jsr print
-;@1
-;	lda <bcd
-;	and #$0f
-;	clc
-;	adc #'0'
-;	jmp print
+
 
 print_dec_16
 	mx %11
@@ -900,4 +1042,6 @@ screen_y	ds 2
 
 line		ds 40
 line_length	ds 2
+
+xbuffer		ds 32
 
