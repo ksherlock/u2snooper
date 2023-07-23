@@ -11,34 +11,63 @@ IDM_OR	equ $e0c0b0
 IDM_AR	equ $e0c0b1
 IDM_DR	equ $e0c0b3
 
+KEY_LEFT	equ $08
+KEY_RIGHT	equ $15
+KEY_UP		equ $0b
+KEY_DOWN	equ $0a
+KEY_ESC		equ $1b	
+
+
 ; direct page
 ; rw = reserve word
 ; uses the __rs variable.
 	rsreset
+page	rw 1 ; current active page.
+
 ptr	rw 1
 str_ptr	rw 1 
 
 bcd	rw 2
 tmp	rw 1
 scratch	rw 2 ; rl not supported...
+addr	rw 2
 
 ;
+_SysBeep macro
+	ldx #$2c03
+	jsl $e10000
+	endm
 
+_beep	macro
+	local mmxx
+mmxx	= __mx
+	if mmxx<>0
+	php
+	rep #$30
+	endif
+	_SysBeep
+	if mmxx<>0
+	plp
+	mx mmxx
+	endif
+	endm
 
 
 
 pstr	macro
-	db @end-@start ; n.b. - macro expansion displays the wrong value
-@start
+	local .start,.end
+	db .end-.start ; n.b. - macro expansion displays the wrong value
+.start
 	db \1
-@end
+.end
 	endm
 
 gsstr	macro
-	dw @end-@start ; n.b. - macro expansion displays the wrong value
-@start
+	local .start,.end
+	dw .end-.start ; n.b. - macro expansion displays the wrong value
+.start
 	db \1
-@end
+.end
 	endm
 
 
@@ -110,7 +139,6 @@ bits = %11
 
 
 ShutDown
-
 	mx %00
 
 	rtl
@@ -132,6 +160,7 @@ StartUp
 
 	jsr screen_init
 
+	stz page
 ;	jsr print_footer
 	jsr display_common
 
@@ -161,8 +190,7 @@ mainloop
 @loop
 	cmp @k,x
 	bne @next
-	jsr (@d,x)
-	short m,x
+	jsr (dispatch,x)
 	bra mainloop
 @next
 	dex
@@ -170,19 +198,21 @@ mainloop
 	bpl @loop
 	bra @wait 
 
+
 ;
 ; todo:
-; T -> show transmit buffer
-; R -> show receive buffer
-; : -> write to register
 ; i -> clear interrupts
 
-@k	dw '0','1','2','3','C','R','T'
+PAGE_COMMON equ 0
+PAGE_0	equ 1
+PAGE_1	equ 2
+PAGE_2	equ 3
+PAGE_3	equ 4
+PAGE_TX equ 5
+PAGE_RX	equ 6
+
+@k	dw 'C','0','1','2','3','T','R',':',KEY_LEFT,KEY_RIGHT,KEY_DOWN,KEY_UP
 @ksize	equ *-@k
-
-@d	dw key0,key1,key2,key3,display_common,display_rx,display_tx
-
-
 
 
 quit
@@ -193,6 +223,71 @@ quit
 	sta >IDM_AR
 
 	rtl
+	mx %11
+
+
+
+dispatch
+	dw display_common,key0,key1,key2,key3,display_tx,display_rx
+	dw set_memory,@left,@right,@down,@up
+
+
+@left
+	lda page
+	dec
+	bpl @d
+	lda #PAGE_RX
+@d
+	sta page
+	asl
+	tax
+	jmp (dispatch,x)
+
+@right
+	lda page
+	inc
+	cmp #PAGE_RX+1
+	bcc @d
+	lda #0
+	bra @d
+
+@down
+	lda page
+	cmp #PAGE_RX
+	beq @down.ok
+	cmp #PAGE_TX
+	beq @down.ok
+	rts
+@down.ok
+	jmp dump_common
+
+@up
+	lda page
+	cmp #PAGE_RX
+	beq @up.ok
+	cmp #PAGE_TX
+	beq @up.ok
+	rts
+@up.ok
+	lda >IDM_AR
+	dec
+	sta >IDM_AR
+	jmp dump_common
+
+
+
+
+rdispatch
+	dw display_common,key0,key1,key2,key3,dump_common,dump_common
+
+
+refresh
+	lda page
+	asl
+	tax
+	jmp (rdispatch,x)
+
+
 
 
 print_footer
@@ -209,15 +304,21 @@ print_footer
 	jmp print_str
 @help	db "Q)uit C)ommon 0 1 2 3",0
 
-PrintOne	module
+print_register	module
 	mx %11
-	ldy #0
 
+	lda (ptr)
+
+	sta >IDM_AR+1
+
+	jsr print_hex
+	inc screen_x
+	ldy #1
 
 ; print the label
 @loop
 	lda (ptr),y
-	beq load
+	bmi load
 	phy
 	jsr print
 	ply
@@ -226,14 +327,10 @@ PrintOne	module
 
 ; read the data..
 load
-	iny
-	lda (ptr),y
-	sta >IDM_AR+1
-	iny
-	lda (ptr),y
+	phy ; save
+	and #$7f
 	asl
 	tax ; byte count / type
-	phy ; save
 	jsr (table,x)
 	ply
 	iny
@@ -458,6 +555,8 @@ do_xtra_ir	module
 display_common	module
 	mx %11
 
+	stz page
+
 	jsr screen_clear
 
 	pea @header
@@ -482,7 +581,7 @@ display_common	module
 	ora ptr
 	beq @done
 	phx
-	jsr PrintOne
+	jsr print_register
 	plx
 	inx
 	inx
@@ -497,24 +596,23 @@ display_common	module
 	dw 0
 
 
-;; c-string, offset, bytes,
-@r0	db	"MR:             ",0,$00,1,0
-@r1	db	"Gateway:        ",0,$01,4,0
-@r2	db	"Subnet:         ",0,$05,4,0
-@r3	db	"MAC:            ",0,$09,6,0
-@r4	db	"IP:             ",0,$0f,4,0
-@r5	db	"IR:             ",0,$15,1,XTRA_IR
-@r6	db	"IMR:            ",0,$16,1,0
-@r7	db	"RTR:            ",0,$17,2,XTRA_DEC
-@r8	db 	"RCR             ",0,$19,1,XTRA_DEC
-@r9	db	"RMSR:           ",0,$1a,1,0
-@r10	db	"TMSR:           ",0,$1b,1,0
-@r11	db	"PPPoE Auth      ",0,$1c,2,0
-@r12	db 	"PPPoE Timer:    ",0,$28,1,0
-@r13	db	"PPPoE Magic:    ",0,$29,1,0
-@r14	db	"U IP:           ",0,$2a,4,0
-@r15	db	"U Port:         ",0,$2e,2,XTRA_DEC
-
+;; offset, c-string, offset, bytes,
+@r0	db	$00,"MR:             ",$81,0
+@r1	db	$01,"Gateway:        ",$84,0
+@r2	db	$05,"Subnet:         ",$84,0
+@r3	db	$09,"MAC:            ",$86,0
+@r4	db	$0f,"IP:             ",$84,0
+@r5	db	$15,"IR:             ",$81,XTRA_IR
+@r6	db	$16,"IMR:            ",$81,0
+@r7	db	$17,"RTR:            ",$82,XTRA_DEC
+@r8	db 	$19,"RCR             ",$81,XTRA_DEC
+@r9	db	$1a,"RMSR:           ",$81,0
+@r10	db	$1b,"TMSR:           ",$81,0
+@r11	db	$2a,"U IP:           ",$84,0
+@r12	db	$2e,"U Port:         ",$82,XTRA_DEC
+@r13	db	$1c,"PPPoE Auth      ",$82,0 ; intentionally out of order
+@r14	db 	$28,"PPPoE Timer:    ",$81,0
+@r15	db	$29,"PPPoE Magic:    ",$81,0
 
 @header	db "Common  Registers",0
 	modend
@@ -538,6 +636,9 @@ print_socket_header
 key0
 	mx %11
 
+	lda #1
+	sta page
+
 	jsr screen_clear
 
 	lda #4
@@ -547,6 +648,9 @@ key0
 
 key1
 	mx %11
+
+	lda #2
+	sta page
 
 	jsr screen_clear
 
@@ -559,6 +663,9 @@ key1
 key2
 	mx %11
 
+	lda #3
+	sta page
+
 	jsr screen_clear
 
 	lda #6
@@ -566,9 +673,12 @@ key2
 	jsr print_socket_header
 	bra reg
 
-
 key3
 	mx %11
+
+	lda #4
+	sta page
+
 
 	jsr screen_clear
 
@@ -592,7 +702,7 @@ reg
 	ora ptr
 	beq @done
 	phx
-	jsr PrintOne
+	jsr print_register
 	plx
 	inx
 	inx
@@ -608,30 +718,34 @@ reg
 	dw 0
 
 ;; c-string, offset, bytes, extra
-@r0	db	"MR:             ",0,$00,1,0
-@r1	db	"CR:             ",0,$01,1,0
-@r2	db	"IR:             ",0,$02,1,XTRA_SN_IR
-@r3	db	"SR:             ",0,$03,1,XTRA_SN_SR
-@r4	db	"Port:           ",0,$04,2,XTRA_DEC
-@r5	db	"Dest MAC:       ",0,$06,6,0
-@r6	db	"Dest IP:        ",0,$0c,4,0
-@r7	db	"Dest Port:      ",0,$10,2,XTRA_DEC
-@r8	db	"MSS:            ",0,$12,2,XTRA_DEC
-@r9	db	"Proto:          ",0,$14,1,0
-@r10	db	"TOS:            ",0,$15,1,0
-@r11	db	"TTL:            ",0,$16,1,0
-@r12	db	"Fragment:       ",0,$2d,2,0 ; intentionally out of order
-@r13	db	"RX Buf Size:    ",0,$1e,1,0
-@r14	db	"TX Buf Size:    ",0,$1f,1,0
-@r15	db	"TX FSR:         ",0,$20,2,XTRA_DEC
-@r16	db	"TX RD:          ",0,$22,2,0
-@r17	db	"TX WR:          ",0,$24,2,0
-@r18	db	"RX RSR:         ",0,$26,2,XTRA_DEC
-@r19	db	"RX RD:          ",0,$28,2,0
-@r20	db	"RX WR:          ",0,$2a,2,0
+@r0	db	$00,"MR:             ",$81,0
+@r1	db	$01,"CR:             ",$81,0
+@r2	db	$02,"IR:             ",$81,XTRA_SN_IR
+@r3	db	$03,"SR:             ",$81,XTRA_SN_SR
+@r4	db	$04,"Port:           ",$82,XTRA_DEC
+@r5	db	$06,"Dest MAC:       ",$86,0
+@r6	db	$0c,"Dest IP:        ",$84,0
+@r7	db	$10,"Dest Port:      ",$82,XTRA_DEC
+@r8	db	$12,"MSS:            ",$82,XTRA_DEC
+@r9	db	$14,"Proto:          ",$81,0
+@r10	db	$15,"TOS:            ",$81,0
+@r11	db	$16,"TTL:            ",$81,0
+@r12	db	$2d,"Fragment:       ",$82,0 ; intentionally out of order
+@r13	db	$1e,"RX Buf Size:    ",$81,0
+@r14	db	$1f,"TX Buf Size:    ",$81,0
+@r15	db	$20,"TX FSR:         ",$82,XTRA_DEC
+@r16	db	$22,"TX RD:          ",$82,0
+@r17	db	$24,"TX WR:          ",$82,0
+@r18	db	$26,"RX RSR:         ",$82,XTRA_DEC
+@r19	db	$28,"RX RD:          ",$82,0
+@r20	db	$2a,"RX WR:          ",$82,0
 
 
 display_tx
+
+	lda #PAGE_TX
+	sta page
+
 
 	jsr screen_clear
 
@@ -655,6 +769,9 @@ display_tx
 
 display_rx
 
+	lda #PAGE_RX
+	sta page
+
 	jsr screen_clear
 
 	pea @header
@@ -676,8 +793,11 @@ display_rx
 
 dump_common
 
+	ldy #4
+	sty screen_y
+	stz screen_x
 
-	ldy #10
+	ldy #8
 @yloop
 	phy
 
@@ -685,8 +805,9 @@ dump_common
 	jsr print_hex
 	lda >IDM_AR+1
 	jsr print_hex
-	lda #' '
-	jsr print
+;	lda #' '
+;	jsr print
+	inc screen_x
 
 	ldx #8
 @xloop1
@@ -754,6 +875,146 @@ dump_common
 	lda #'.'
 	jmp print
 
+
+
+
+;
+; address: hex bytes...
+;
+;
+set_memory
+	ldy #23*2
+	sty screen_y
+	jsr readline
+	bcc @ok
+@err
+	jmp refresh
+@ok
+
+
+;
+; expected format:
+; xx: xx xx xx xx.  space is optional
+; or xxxx: xx xxx
+
+
+	jsr @read.addr
+	bcs @errbeep
+
+@loop
+	iny
+	lda line,y
+	beq @end
+	cmp #' '+1
+	bcc @loop ; ws
+	jsr is_x
+	bcs @errbeep
+	ldx tmp+1
+	bne @store
+
+	asl
+	asl
+	asl
+	asl
+	sta tmp
+	sec
+	ror tmp+1
+	bra @loop
+
+
+@store	ora tmp
+	sta >IDM_DR
+	stz tmp
+	stz tmp+1
+	bra @loop
+
+@errbeep
+	_beep
+
+@end
+	jmp refresh
+
+@read.addr
+	stz tmp
+	stz tmp+1
+
+	ldy #0
+	jsr @read.one
+	bcs @rts
+	lda line,y
+	cmp #':'
+	bne @16
+@ar1	lda tmp
+	sta >IDM_AR+1
+;	iny
+	clc
+
+@rts	rts
+
+@16
+	lda tmp
+	sta >IDM_AR
+	jsr @read.one
+	bcs @rts
+
+	lda line,y
+	cmp #':'
+	beq @ar1
+	sec
+	rts
+
+@read.one
+	lda line,y
+	jsr is_x
+	bcs @rts
+	asl
+	asl
+	asl
+	asl
+	sta tmp
+	iny
+	lda line,y
+	jsr is_x
+	bcs @rts
+	tsb tmp
+	iny
+	rts
+
+
+;
+; does not touch x/y
+;
+is_x
+	cmp #'0'
+	bcc @no
+	cmp #'9'+1
+	bcc @num
+	cmp #'A'
+	bcc @no
+	cmp #'F'+1
+	bcc @letter
+	cmp #'a'
+	bcc @no
+	cmp #'f'+1
+	bcs @no
+@letter
+	and #$0f
+	clc
+	adc #9
+	rts
+
+@num	and #$0f
+	clc
+	rts
+
+
+@no	lda #-1
+	sec
+	rts
+
+
+
+
 	section Screen
 ; 
 screen_init
@@ -799,7 +1060,7 @@ line_clear
 	sta @smh+1
 	lda #$a0a0
 	ldx #40-2
-@smh	sta >$e00000
+@smh	sta >$e00000,x
 	dex
 	dex
 	bpl @smh
@@ -984,12 +1245,22 @@ readline	module
 	; need to erase line...
 	jsr line_clear
 
+	lda #'_'
+	jsr print
+	dec screen_x
+
 @read	lda >$e0c000
 	bpl @read
 	sta >$e0c010
 	and #$7f
+
 	cmp #$20
 	blt @ctrl
+
+	cmp #$7f
+	beq @bs
+
+
 	ldy line_length
 	cpy #38
 	bcs @overflow
@@ -1002,17 +1273,22 @@ readline	module
 	bra @read
 @overflow
 	; beep?
+	_beep
 	bra @read
 
 @ctrl
 	cmp #$08 ; backspace
 	beq @bs
-	cmp #$0d
+	cmp #$1b ; escape
+	beq @esc
+	cmp #$17
+	beq @w
+	cmp #$0d ; cr
 	bne @read
 @cr
 	ldy line_length
 	lda #0
-	sta line_length,y
+	sta line,y
 	tya
 	clc
 	rts
@@ -1026,7 +1302,16 @@ readline	module
 	jsr print
 	lda #' '
 	jsr print
-	dec line_length
+	dec screen_x
+	dec screen_x
+	bra @read
+
+@esc
+	sec
+	rts
+
+; control-w - delete word.
+@w
 	bra @read
 
 	modend
