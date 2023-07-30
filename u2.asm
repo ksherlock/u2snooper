@@ -56,7 +56,7 @@ mmxx	= __mx
 
 pstr	macro
 	local .start,.end
-	db .end-.start ; n.b. - macro expansion displays the wrong value
+	db .end-.start ; n.b. - macro expansion sometimes displays the wrong value
 .start
 	db \1
 .end
@@ -64,7 +64,7 @@ pstr	macro
 
 gsstr	macro
 	local .start,.end
-	dw .end-.start ; n.b. - macro expansion displays the wrong value
+	dw .end-.start ; n.b. - macro expansion sometimes displays the wrong value
 .start
 	db \1
 .end
@@ -170,10 +170,6 @@ mainloop
 	bpl @wait
 	sta >$e0c010
 
-	; keys
-	; Q - quit
-	; C - display common registers
-	; 0-3 display socket registers
 
 	and #$7f
 	cmp #'a'
@@ -210,8 +206,9 @@ PAGE_2	equ 3
 PAGE_3	equ 4
 PAGE_TX equ 5
 PAGE_RX	equ 6
+PAGE_HELP equ 7
 
-@k	dw 'C','0','1','2','3','T','R',':',KEY_LEFT,KEY_RIGHT,KEY_DOWN,KEY_UP
+@k	dw 'C','0','1','2','3','T','R','?',':',KEY_LEFT,KEY_RIGHT,KEY_DOWN,KEY_UP
 @ksize	equ *-@k
 
 
@@ -228,7 +225,7 @@ quit
 
 
 dispatch
-	dw display_common,key0,key1,key2,key3,display_tx,display_rx
+	dw display_common,display_0,display_1,display_2,display_3,display_tx,display_rx,display_help
 	dw set_memory,@left,@right,@down,@up
 
 
@@ -251,6 +248,7 @@ dispatch
 	lda #0
 	bra @d
 
+; auto-increment wraps at $2000 so nothing special needed.
 @down
 	lda page
 	cmp #PAGE_RX
@@ -269,7 +267,16 @@ dispatch
 	beq @up.ok
 	rts
 @up.ok
+	; $40 -> $5f; 60 -> $7f
 	lda >IDM_AR
+	bit #$1f
+	bne @up.dec
+
+	ora #$1f
+	sta >IDM_AR
+	jmp dump_common
+
+@up.dec
 	dec
 	sta >IDM_AR
 	jmp dump_common
@@ -278,7 +285,7 @@ dispatch
 
 
 rdispatch
-	dw display_common,key0,key1,key2,key3,dump_common,dump_common
+	dw display_common,display_0,display_1,display_2,display_3,dump_common,dump_common,display_help
 
 
 refresh
@@ -289,20 +296,83 @@ refresh
 
 
 
-
-print_footer
+display_help
 	mx %11
-	stz screen_x
-	lda #23*2
-	sta screen_y
 
-	pea @help
-	pla
+	lda #PAGE_HELP
+	sta page
+
+	jsr screen_clear
+
+	lda #@title
 	sta str_ptr
-	pla
+	lda #@title>>8
 	sta str_ptr+1
-	jmp print_str
-@help	db "Q)uit C)ommon 0 1 2 3",0
+	jsr print_str
+	jsr print_cr
+	inc screen_y
+	inc screen_y
+
+	ldx #0
+@loop
+	lda @table,x
+	inx
+	sta str_ptr
+	lda @table,x
+	inx
+	sta str_ptr+1
+	phx
+	jsr print_str
+	jsr print_cr
+	plx
+	cpx #18*2
+	bcc @loop
+	rts
+
+
+@table
+	dw @00,@01,@02,@03,@04,@05,@06,@07,@08,@09
+	dw @10,@11,@12,@13,@14,@15,@16,@17,@18,@19
+
+@title	db "Help",0
+
+@00	db "C - Common Registers",0
+@01	db "0 - Socket 0 Registers",0
+@02	db "1 - Socket 1 Registers",0
+@03	db "2 - Socket 2 Registers",0
+@04	db "3 - Socket 3 Registers",0
+@05	db "R - Receive Buffer",0
+@06	db "T - Transmit Buffer",0
+@07	db ": - Write memory",0
+@08	db "? - Help",0
+@09	db "",0
+@10	db "Socket Commands:",0
+@11	db "$01: Open",0
+@12	db "$02: Listen",0
+@13	db "$04: Connect",0
+@14	db "$08: Disconnect",0
+@15	db "$10: Close",0
+@16	db "$20: Send",0
+@17	db "$21: Send Mac",0
+@18	db "$22: Send Keep alive",0
+@19	db "$40: Receive",0
+
+
+
+
+;print_footer
+;	mx %11
+;	stz screen_x
+;	lda #23*2
+;	sta screen_y
+
+;	pea @help
+;	pla
+;	sta str_ptr
+;	pla
+;	sta str_ptr+1
+;	jmp print_str
+;@help	db "Q)uit C)ommon 0 1 2 3",0
 
 print_register	module
 	mx %11
@@ -352,12 +422,14 @@ XTRA_NOP	equ 0
 XTRA_DEC	equ 2
 XTRA_SN_SR	equ 4
 XTRA_SN_IR	equ 6
-XTRA_IR		equ 8
+XTRA_SN_MR	equ 8
+XTRA_IR		equ 10
 
 extra	dw print_cr
 	dw do_xtra_dec
 	dw do_xtra_sn_sr
 	dw do_xtra_sn_ir
+	dw do_xtra_sn_mr
 	dw do_xtra_ir
 
 @rts
@@ -457,6 +529,91 @@ do_xtra_sn_sr	module
 @l1b	db 'time wait',0
 @l1d	db 'last ack',0
 @l01	db 'arp',0
+	modend
+
+do_xtra_sn_mr	module
+	mx %11
+
+	lda #' '
+	jsr print
+
+	lda #@t>>8
+	sta str_ptr+1
+
+	lda scratch
+	and #$0f
+	cmp #6
+	bcc @ok
+	lda #6
+
+@ok
+	asl ; x 2
+	asl ; x 4
+	; must be clc since <= 6*4
+	adc #@t
+	sta str_ptr
+	jsr print_str
+
+@bit7
+	; only applies to udp
+	bit scratch
+	bpl @bit6
+	lda #@multi
+	sta str_ptr
+	lda #@multi>>8
+	sta str_ptr+1
+	jsr print_str
+
+@bit6
+	; only applies to macraw / socket 0.
+	bit scratch
+	bvc @bit5
+	lda #@mf
+	sta str_ptr
+	lda #@mf>>8
+	sta str_ptr+1
+	jsr print_str
+
+@bit5
+	; nd/mc depend on tcp/udp status.
+	lda scratch
+	and #%00100111
+	cmp #%00100001
+	beq @pnd
+	cmp #%00100010
+	beq @pmc
+	jmp print_cr
+@pnd
+	lda #@nd
+	sta str_ptr
+	lda #@nd>>8
+	sta str_ptr+1
+	jsr print_str	
+	jmp print_cr
+
+@pmc
+	lda #@mc
+	sta str_ptr
+	lda #@mc>>8
+	sta str_ptr+1
+	jsr print_str	
+	jmp print_cr
+
+@t
+	db '---',0
+	db 'tcp',0
+	db 'udp',0
+	db 'ip ',0
+	db 'mac',0
+	db 'ppp',0
+	db '???',0
+@multi	db ', multi',0
+@mf	db ', mf',0
+@nd	db ', nd',0
+@mc	db ', mc',0
+
+
+
 	modend
 
 
@@ -588,7 +745,8 @@ display_common	module
 	bra @loop
 
 @done
-	jmp print_footer
+	rts
+;	jmp print_footer
 
 @table
 	dw @r0,@r1,@r2,@r3,@r4,@r5,@r6,@r7,@r8
@@ -633,7 +791,7 @@ print_socket_header
 @header db "Socket 0 Registers",0
 
 
-key0
+display_0
 	mx %11
 
 	lda #1
@@ -646,7 +804,7 @@ key0
 	jsr print_socket_header
 	bra reg
 
-key1
+display_1
 	mx %11
 
 	lda #2
@@ -660,7 +818,7 @@ key1
 	bra reg
 
 
-key2
+display_2
 	mx %11
 
 	lda #3
@@ -673,7 +831,7 @@ key2
 	jsr print_socket_header
 	bra reg
 
-key3
+display_3
 	mx %11
 
 	lda #4
@@ -709,7 +867,8 @@ reg
 	bra @loop
 
 @done
-	jmp print_footer
+	rts
+;	jmp print_footer
 
 @table
 	dw @r0,@r1,@r2,@r3,@r4,@r5,@r6,@r7,@r8
@@ -718,7 +877,7 @@ reg
 	dw 0
 
 ;; c-string, offset, bytes, extra
-@r0	db	$00,"MR:             ",$81,0
+@r0	db	$00,"MR:             ",$81,XTRA_SN_MR
 @r1	db	$01,"CR:             ",$81,0
 @r2	db	$02,"IR:             ",$81,XTRA_SN_IR
 @r3	db	$03,"SR:             ",$81,XTRA_SN_SR
@@ -862,7 +1021,8 @@ dump_common
 	dey
 	bne @yloop
 
-	jmp print_footer
+	rts
+;	jmp print_footer
 
 @printc
 	inc screen_x
