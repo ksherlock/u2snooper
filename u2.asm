@@ -222,7 +222,16 @@ quit
 	rtl
 	mx %11
 
-
+print_header
+;
+; x:y = c-string pointer.
+;
+	stx str_ptr
+	sty str_ptr+1
+	jsr screen_clear
+	jsr print_str
+	jsr print_cr
+	jmp print_cr
 
 dispatch
 	dw display_common,display_0,display_1,display_2,display_3,display_tx,display_rx,display_help
@@ -302,30 +311,23 @@ display_help
 	lda #PAGE_HELP
 	sta page
 
-	jsr screen_clear
-
-	lda #@title
-	sta str_ptr
-	lda #@title>>8
-	sta str_ptr+1
-	jsr print_str
-	jsr print_cr
-	inc screen_y
-	inc screen_y
+	ldx #@title
+	ldy #@title>>8
+	jsr print_header
 
 	ldx #0
 @loop
-	lda @table,x
-	inx
-	sta str_ptr
-	lda @table,x
-	inx
-	sta str_ptr+1
 	phx
-	jsr print_str
+	lda @table+1,x
+	tay
+	lda @table,x
+	tax
+	jsr print_str_xy
 	jsr print_cr
 	plx
-	cpx #18*2
+	inx
+	inx
+	cpx #20*2
 	bcc @loop
 	rts
 
@@ -334,7 +336,7 @@ display_help
 	dw @00,@01,@02,@03,@04,@05,@06,@07,@08,@09
 	dw @10,@11,@12,@13,@14,@15,@16,@17,@18,@19
 
-@title	db "Help",0
+@title	db "U2 Snooper",0
 
 @00	db "C - Common Registers",0
 @01	db "0 - Socket 0 Registers",0
@@ -354,25 +356,10 @@ display_help
 @15	db "$10: Close",0
 @16	db "$20: Send",0
 @17	db "$21: Send Mac",0
-@18	db "$22: Send Keep alive",0
+@18	db "$22: Send Keep-Alive",0
 @19	db "$40: Receive",0
 
 
-
-
-;print_footer
-;	mx %11
-;	stz screen_x
-;	lda #23*2
-;	sta screen_y
-
-;	pea @help
-;	pla
-;	sta str_ptr
-;	pla
-;	sta str_ptr+1
-;	jmp print_str
-;@help	db "Q)uit C)ommon 0 1 2 3",0
 
 print_register	module
 	mx %11
@@ -420,17 +407,20 @@ table
 
 XTRA_NOP	equ 0
 XTRA_DEC	equ 2
-XTRA_SN_SR	equ 4
-XTRA_SN_IR	equ 6
+XTRA_MR		equ 4
+XTRA_IR		equ 6
 XTRA_SN_MR	equ 8
-XTRA_IR		equ 10
+XTRA_SN_IR	equ 10
+XTRA_SN_SR	equ 12
+
 
 extra	dw print_cr
 	dw do_xtra_dec
-	dw do_xtra_sn_sr
-	dw do_xtra_sn_ir
-	dw do_xtra_sn_mr
+	dw do_xtra_mr
 	dw do_xtra_ir
+	dw do_xtra_sn_mr
+	dw do_xtra_sn_ir
+	dw do_xtra_sn_sr
 
 @rts
 	rts
@@ -500,11 +490,11 @@ do_xtra_sn_sr	module
 	bpl @loop
 	jmp print_cr
 @match
-	lda @ltable,x
-	sta str_ptr
 	lda @ltable+1,x
-	sta str_ptr+1
-	jsr print_str
+	tay
+	lda @ltable,x
+	tax
+	jsr print_str_xy
 	jmp print_cr
 
 @sr	dw $00,$13,$14,$17,$1c,$22,$32,$42,$5f,$15,$16,$18,$1a,$1b,$1d,$01
@@ -529,6 +519,56 @@ do_xtra_sn_sr	module
 @l1b	db 'time wait',0
 @l1d	db 'last ack',0
 @l01	db 'arp',0
+	modend
+
+
+do_xtra_mr	module
+; bit 7 (reset) should never be set (if this is an u2)
+
+	bit scratch
+@bit7
+	bpl @bit4
+	ldx #@rst
+	ldy #@rst>>8
+	jsr print_str_xy
+
+@bit4	lda scratch
+	and #%00001000
+	beq @bit3
+	ldx #@pb
+	ldy #@pb>>8
+	jsr print_str_xy
+
+@bit3	lda scratch
+	and #%00000100
+	beq @bit1
+	ldx #@ppp
+	ldy #@ppp>>8
+	jsr print_str_xy
+
+@bit1	lda scratch
+	and #%00000010
+	beq @bit0
+	ldx #@ai
+	ldy #@ai>>8
+	jsr print_str_xy
+
+@bit0	lda scratch
+	and #%00000001
+	beq @rts
+	ldx #@ind
+	ldy #@ind>>8
+	jsr print_str_xy
+
+
+@rts	jmp print_cr
+
+@rst	db " rst",0
+@pb	db " pb",0
+@ppp	db " ppp",0
+@ai	db " ai",0
+@ind	db " ind",0
+
 	modend
 
 do_xtra_sn_mr	module
@@ -558,21 +598,17 @@ do_xtra_sn_mr	module
 	; only applies to udp
 	bit scratch
 	bpl @bit6
-	lda #@multi
-	sta str_ptr
-	lda #@multi>>8
-	sta str_ptr+1
-	jsr print_str
+	ldx #@multi
+	ldy #@multi>>8
+	jsr print_str_xy
 
 @bit6
 	; only applies to macraw / socket 0.
 	bit scratch
 	bvc @bit5
-	lda #@mf
-	sta str_ptr
-	lda #@mf>>8
-	sta str_ptr+1
-	jsr print_str
+	ldx #@mf
+	ldy #@mf>>8
+	jsr print_str_xy
 
 @bit5
 	; nd/mc depend on tcp/udp status.
@@ -584,19 +620,15 @@ do_xtra_sn_mr	module
 	beq @pmc
 	jmp print_cr
 @pnd
-	lda #@nd
-	sta str_ptr
-	lda #@nd>>8
-	sta str_ptr+1
-	jsr print_str	
+	ldx #@nd
+	ldy #@nd>>8
+	jsr print_str_xy
 	jmp print_cr
 
 @pmc
-	lda #@mc
-	sta str_ptr
-	lda #@mc>>8
-	sta str_ptr+1
-	jsr print_str	
+	ldx #@mc
+	ldy #@mc>>8
+	jsr print_str_xy	
 	jmp print_cr
 
 @t
@@ -607,10 +639,11 @@ do_xtra_sn_mr	module
 	db 'mac',0
 	db 'ppp',0
 	db '???',0
-@multi	db ', multi',0
-@mf	db ', mf',0
-@nd	db ', nd',0
-@mc	db ', mc',0
+
+@multi	db ' multi',0
+@mf	db ' mf',0
+@nd	db ' nd',0
+@mc	db ' mc',0
 
 
 
@@ -622,7 +655,7 @@ do_xtra_sn_ir	module
 
 	lda #'-'
 	ldx #7
-@loop1	sta @str,x
+@loop1	sta @str+1,x
 	dex
 	bpl @loop1
 
@@ -638,27 +671,20 @@ do_xtra_sn_ir	module
 	pha
 	txa
 	lda @t,x
-	sta @str,x
+	sta @str+1,x
 	pla
 	plx
 
 @next	dex
 	bpl @loop2
 
-	lda #' '
-	jsr print
-
-	pea @str
-	pla
-	sta str_ptr
-	pla
-	sta str_ptr+1
-
-	jsr print_str
+	ldx #@str
+	ldy #@str>>8
+	jsr print_str_xy
 	jmp print_cr
 
 @t	db '???STRDC'
-@str	db '--------',0
+@str	db ' --------',0
 
 	modend
 
@@ -667,7 +693,7 @@ do_xtra_ir	module
 
 	lda #'-'
 	ldx #7
-@loop1	sta @str,x
+@loop1	sta @str+1,x
 	dex
 	bpl @loop1
 
@@ -683,27 +709,20 @@ do_xtra_ir	module
 	pha
 	txa
 	lda @t,x
-	sta @str,x
+	sta @str+1,x
 	pla
 	plx
 
 @next	dex
 	bpl @loop2
 
-	lda #' '
-	jsr print
-
-	pea @str
-	pla
-	sta str_ptr
-	pla
-	sta str_ptr+1
-
-	jsr print_str
+	ldx #@str
+	ldy #@str>>8
+	jsr print_str_xy
 	jmp print_cr
 
 @t	db 'CUP?3210'
-@str	db '--------',0
+@str	db ' --------',0
 
 	modend
 
@@ -714,15 +733,9 @@ display_common	module
 
 	stz page
 
-	jsr screen_clear
-
-	pea @header
-	pla
-	sta str_ptr
-	pla
-	sta str_ptr+1
-	jsr print_str
-	jsr print_cr
+	ldx #@header
+	ldy #@header>>8
+	jsr print_header
 
 
 	lda #0
@@ -755,7 +768,7 @@ display_common	module
 
 
 ;; offset, c-string, offset, bytes,
-@r0	db	$00,"MR:             ",$81,0
+@r0	db	$00,"MR:             ",$81,XTRA_MR
 @r1	db	$01,"Gateway:        ",$84,0
 @r2	db	$05,"Subnet:         ",$84,0
 @r3	db	$09,"MAC:            ",$86,0
@@ -781,13 +794,11 @@ print_socket_header
 	and #$03
 	ora #$30
 	sta @header+7
-	pea @header
-	pla
-	sta str_ptr
-	pla
-	sta str_ptr+1
-	jsr print_str
-	jmp print_cr
+
+	ldx #@header
+	ldy #@header>>8
+	jmp print_header
+
 @header db "Socket 0 Registers",0
 
 
@@ -796,8 +807,6 @@ display_0
 
 	lda #1
 	sta page
-
-	jsr screen_clear
 
 	lda #4
 	sta >IDM_AR
@@ -809,8 +818,6 @@ display_1
 
 	lda #2
 	sta page
-
-	jsr screen_clear
 
 	lda #5
 	sta >IDM_AR
@@ -824,8 +831,6 @@ display_2
 	lda #3
 	sta page
 
-	jsr screen_clear
-
 	lda #6
 	sta >IDM_AR
 	jsr print_socket_header
@@ -836,9 +841,6 @@ display_3
 
 	lda #4
 	sta page
-
-
-	jsr screen_clear
 
 	lda #7
 	sta >IDM_AR
@@ -906,15 +908,9 @@ display_tx
 	sta page
 
 
-	jsr screen_clear
-
-	pea @header
-	pla
-	sta str_ptr
-	pla
-	sta str_ptr+1
-	jsr print_str
-	jsr print_cr
+	ldx #@header
+	ldy #@header>>8
+	jsr print_header
 
 	lda #$40
 	sta >IDM_AR
@@ -931,15 +927,9 @@ display_rx
 	lda #PAGE_RX
 	sta page
 
-	jsr screen_clear
-
-	pea @header
-	pla
-	sta str_ptr
-	pla
-	sta str_ptr+1
-	jsr print_str
-	jsr print_cr
+	ldx #@header
+	ldy #@header>>8
+	jsr print_header
 
 	lda #$60
 	sta >IDM_AR
@@ -1092,6 +1082,10 @@ set_memory
 	_beep
 
 @end
+	; reset MR just in case
+	lda >IDM_OR
+	ora #$03
+	sta >IDM_OR
 	jmp refresh
 
 @read.addr
@@ -1257,6 +1251,10 @@ print_cr
 	inc screen_y
 	rts
 
+print_str_xy
+	mx %11
+	stx str_ptr
+	sty str_ptr+1
 print_str
 	mx %11
 	ldy #0
