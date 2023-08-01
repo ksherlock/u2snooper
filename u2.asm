@@ -6,6 +6,7 @@
 
 	opt ws- ; relaxed white space
 	opt od+ ; direct-page optimization
+	opt l:  ; : for local labels.
 
 IDM_OR	equ $e0c0b0
 IDM_AR	equ $e0c0b1
@@ -57,14 +58,6 @@ mmxx	= __mx
 pstr	macro
 	local .start,.end
 	db .end-.start ; n.b. - macro expansion sometimes displays the wrong value
-.start
-	db \1
-.end
-	endm
-
-gsstr	macro
-	local .start,.end
-	dw .end-.start ; n.b. - macro expansion sometimes displays the wrong value
 .start
 	db \1
 .end
@@ -166,33 +159,33 @@ StartUp
 
 mainloop
 
-@wait	lda >$e0c000
-	bpl @wait
+:wait	lda >$e0c000
+	bpl :wait
 	sta >$e0c010
 
 
 	and #$7f
 	cmp #'a'
-	blt @upper
+	blt :upper
 	cmp #'z'+1
-	bge @upper
+	bge :upper
 	and #~$20
-@upper
+:upper
 	cmp #$1b ; esc
 	beq quit
 	cmp #'Q'
 	beq quit
-	ldx #@ksize-2
-@loop
-	cmp @k,x
-	bne @next
+	ldx #:ksize-2
+:loop
+	cmp :k,x
+	bne :next
 	jsr (dispatch,x)
 	bra mainloop
-@next
+:next
 	dex
 	dex
-	bpl @loop
-	bra @wait 
+	bpl :loop
+	bra :wait 
 
 
 ;
@@ -208,8 +201,8 @@ PAGE_TX equ 5
 PAGE_RX	equ 6
 PAGE_HELP equ 7
 
-@k	dw 'C','0','1','2','3','T','R','?',':',KEY_LEFT,KEY_RIGHT,KEY_DOWN,KEY_UP
-@ksize	equ *-@k
+:k	dw 'C','0','1','2','3','T','R','?',':',KEY_LEFT,KEY_RIGHT,KEY_DOWN,KEY_UP
+:ksize	equ *-:k
 
 
 quit
@@ -235,57 +228,57 @@ print_header
 
 dispatch
 	dw display_common,display_0,display_1,display_2,display_3,display_tx,display_rx,display_help
-	dw set_memory,@left,@right,@down,@up
+	dw set_memory,:left,:right,:down,:up
 
 
-@left
+:left
 	lda page
 	dec
-	bpl @d
+	bpl :d
 	lda #PAGE_RX
-@d
+:d
 	sta page
 	asl
 	tax
 	jmp (dispatch,x)
 
-@right
+:right
 	lda page
 	inc
 	cmp #PAGE_RX+1
-	bcc @d
+	bcc :d
 	lda #0
-	bra @d
+	bra :d
 
 ; auto-increment wraps at $2000 so nothing special needed.
-@down
+:down
 	lda page
 	cmp #PAGE_RX
-	beq @down.ok
+	beq :down.ok
 	cmp #PAGE_TX
-	beq @down.ok
+	beq :down.ok
 	rts
-@down.ok
+:down.ok
 	jmp dump_common
 
-@up
+:up
 	lda page
 	cmp #PAGE_RX
-	beq @up.ok
+	beq :up.ok
 	cmp #PAGE_TX
-	beq @up.ok
+	beq :up.ok
 	rts
-@up.ok
+:up.ok
 	; $40 -> $5f; 60 -> $7f
 	lda >IDM_AR
 	bit #$1f
-	bne @up.dec
+	bne :up.dec
 
 	ora #$1f
 	sta >IDM_AR
 	jmp dump_common
 
-@up.dec
+:up.dec
 	dec
 	sta >IDM_AR
 	jmp dump_common
@@ -311,16 +304,16 @@ display_help
 	lda #PAGE_HELP
 	sta page
 
-	ldx #@title
-	ldy #@title>>8
+	ldx #:title
+	ldy #:title>>8
 	jsr print_header
 
 	ldx #0
-@loop
+:loop
 	phx
-	lda @table+1,x
+	lda :table+1,x
 	tay
-	lda @table,x
+	lda :table,x
 	tax
 	jsr print_str_xy
 	jsr print_cr
@@ -328,36 +321,36 @@ display_help
 	inx
 	inx
 	cpx #20*2
-	bcc @loop
+	bcc :loop
 	rts
 
 
-@table
-	dw @00,@01,@02,@03,@04,@05,@06,@07,@08,@09
-	dw @10,@11,@12,@13,@14,@15,@16,@17,@18,@19
+:table
+	dw :00,:01,:02,:03,:04,:05,:06,:07,:08,:09
+	dw :10,:11,:12,:13,:14,:15,:16,:17,:18,:19
 
-@title	db "U2 Snooper",0
+:title	db "U2 Snooper",0
 
-@00	db "C - Common Registers",0
-@01	db "0 - Socket 0 Registers",0
-@02	db "1 - Socket 1 Registers",0
-@03	db "2 - Socket 2 Registers",0
-@04	db "3 - Socket 3 Registers",0
-@05	db "R - Receive Buffer",0
-@06	db "T - Transmit Buffer",0
-@07	db ": - Write memory",0
-@08	db "? - Help",0
-@09	db "",0
-@10	db "Socket Commands:",0
-@11	db "$01: Open",0
-@12	db "$02: Listen",0
-@13	db "$04: Connect",0
-@14	db "$08: Disconnect",0
-@15	db "$10: Close",0
-@16	db "$20: Send",0
-@17	db "$21: Send Mac",0
-@18	db "$22: Send Keep-Alive",0
-@19	db "$40: Receive",0
+:00	db "C - Common Registers",0
+:01	db "0 - Socket 0 Registers",0
+:02	db "1 - Socket 1 Registers",0
+:03	db "2 - Socket 2 Registers",0
+:04	db "3 - Socket 3 Registers",0
+:05	db "R - Receive Buffer",0
+:06	db "T - Transmit Buffer",0
+:07	db ": - Write memory",0
+:08	db "? - Help",0
+:09	db "",0
+:10	db "Socket Commands:",0
+:11	db "$01: Open",0
+:12	db "$02: Listen",0
+:13	db "$04: Connect",0
+:14	db "$08: Disconnect",0
+:15	db "$10: Close",0
+:16	db "$20: Send",0
+:17	db "$21: Send Mac",0
+:18	db "$22: Send Keep-Alive",0
+:19	db "$40: Receive",0
 
 
 
@@ -373,14 +366,14 @@ print_register	module
 	ldy #1
 
 ; print the label
-@loop
+:loop
 	lda (ptr),y
 	bmi load
 	phy
 	jsr print
 	ply
 	iny
-	bra @loop
+	bra :loop
 
 ; read the data..
 load
@@ -396,12 +389,12 @@ load
 	jmp (extra,x)
 
 table
-	dw @rts
+	dw :rts
 	dw byte1
 	dw byte2
-	dw @rts
+	dw :rts
 	dw byte4
-	dw @rts
+	dw :rts
 	dw byte6
 
 
@@ -422,7 +415,7 @@ extra	dw print_cr
 	dw do_xtra_sn_ir
 	dw do_xtra_sn_sr
 
-@rts
+:rts
 	rts
 	modend
 
@@ -481,44 +474,44 @@ do_xtra_sn_sr	module
 	lda #' '
 	jsr print
 
-	ldx #@srsize-2
+	ldx #:srsize-2
 	lda scratch
-@loop	cmp @sr,x
-	beq @match
+:loop	cmp :sr,x
+	beq :match
 	dex
 	dex
-	bpl @loop
+	bpl :loop
 	jmp print_cr
-@match
-	lda @ltable+1,x
+:match
+	lda :ltable+1,x
 	tay
-	lda @ltable,x
+	lda :ltable,x
 	tax
 	jsr print_str_xy
 	jmp print_cr
 
-@sr	dw $00,$13,$14,$17,$1c,$22,$32,$42,$5f,$15,$16,$18,$1a,$1b,$1d,$01
-@srsize	equ *-@sr
+:sr	dw $00,$13,$14,$17,$1c,$22,$32,$42,$5f,$15,$16,$18,$1a,$1b,$1d,$01
+:srsize	equ *-:sr
 
-@ltable
-	dw @l00,@l13,@l14,@l17,@l1c,@l22,@l32,@l42,@l5f,@l15,@l16,@l18,@l1a,@l1b,@l1d,@l01
+:ltable
+	dw :l00,:l13,:l14,:l17,:l1c,:l22,:l32,:l42,:l5f,:l15,:l16,:l18,:l1a,:l1b,:l1d,:l01
 
-@l00	db 'closed',0
-@l13	db 'init',0
-@l14	db 'listen',0
-@l17	db 'established',0
-@l1c	db 'close wait',0
-@l22	db 'udp',0
-@l32	db 'ipraw',0
-@l42	db 'macraw',0
-@l5f	db 'pppoe',0
-@l15	db 'syn sent',0
-@l16	db 'syn recv',0
-@l18	db 'fin wait',0
-@l1a	db 'closing',0
-@l1b	db 'time wait',0
-@l1d	db 'last ack',0
-@l01	db 'arp',0
+:l00	db 'closed',0
+:l13	db 'init',0
+:l14	db 'listen',0
+:l17	db 'established',0
+:l1c	db 'close wait',0
+:l22	db 'udp',0
+:l32	db 'ipraw',0
+:l42	db 'macraw',0
+:l5f	db 'pppoe',0
+:l15	db 'syn sent',0
+:l16	db 'syn recv',0
+:l18	db 'fin wait',0
+:l1a	db 'closing',0
+:l1b	db 'time wait',0
+:l1d	db 'last ack',0
+:l01	db 'arp',0
 	modend
 
 
@@ -526,48 +519,48 @@ do_xtra_mr	module
 ; bit 7 (reset) should never be set (if this is an u2)
 
 	bit scratch
-@bit7
-	bpl @bit4
-	ldx #@rst
-	ldy #@rst>>8
+:bit7
+	bpl :bit4
+	ldx #:rst
+	ldy #:rst>>8
 	jsr print_str_xy
 
-@bit4	lda scratch
+:bit4	lda scratch
 	and #%00001000
-	beq @bit3
-	ldx #@pb
-	ldy #@pb>>8
+	beq :bit3
+	ldx #:pb
+	ldy #:pb>>8
 	jsr print_str_xy
 
-@bit3	lda scratch
+:bit3	lda scratch
 	and #%00000100
-	beq @bit1
-	ldx #@ppp
-	ldy #@ppp>>8
+	beq :bit1
+	ldx #:ppp
+	ldy #:ppp>>8
 	jsr print_str_xy
 
-@bit1	lda scratch
+:bit1	lda scratch
 	and #%00000010
-	beq @bit0
-	ldx #@ai
-	ldy #@ai>>8
+	beq :bit0
+	ldx #:ai
+	ldy #:ai>>8
 	jsr print_str_xy
 
-@bit0	lda scratch
+:bit0	lda scratch
 	and #%00000001
-	beq @rts
-	ldx #@ind
-	ldy #@ind>>8
+	beq :rts
+	ldx #:ind
+	ldy #:ind>>8
 	jsr print_str_xy
 
 
-@rts	jmp print_cr
+:rts	jmp print_cr
 
-@rst	db " rst",0
-@pb	db " pb",0
-@ppp	db " ppp",0
-@ai	db " ai",0
-@ind	db " ind",0
+:rst	db " rst",0
+:pb	db " pb",0
+:ppp	db " ppp",0
+:ai	db " ai",0
+:ind	db " ind",0
 
 	modend
 
@@ -577,61 +570,61 @@ do_xtra_sn_mr	module
 	lda #' '
 	jsr print
 
-	lda #@t>>8
+	lda #:t>>8
 	sta str_ptr+1
 
 	lda scratch
 	and #$0f
 	cmp #6
-	bcc @ok
+	bcc :ok
 	lda #6
 
-@ok
+:ok
 	asl ; x 2
 	asl ; x 4
 	; must be clc since <= 6*4
-	adc #@t
+	adc #:t
 	sta str_ptr
 	jsr print_str
 
-@bit7
+:bit7
 	; only applies to udp
 	bit scratch
-	bpl @bit6
-	ldx #@multi
-	ldy #@multi>>8
+	bpl :bit6
+	ldx #:multi
+	ldy #:multi>>8
 	jsr print_str_xy
 
-@bit6
+:bit6
 	; only applies to macraw / socket 0.
 	bit scratch
-	bvc @bit5
-	ldx #@mf
-	ldy #@mf>>8
+	bvc :bit5
+	ldx #:mf
+	ldy #:mf>>8
 	jsr print_str_xy
 
-@bit5
+:bit5
 	; nd/mc depend on tcp/udp status.
 	lda scratch
 	and #%00100111
 	cmp #%00100001
-	beq @pnd
+	beq :pnd
 	cmp #%00100010
-	beq @pmc
+	beq :pmc
 	jmp print_cr
-@pnd
-	ldx #@nd
-	ldy #@nd>>8
+:pnd
+	ldx #:nd
+	ldy #:nd>>8
 	jsr print_str_xy
 	jmp print_cr
 
-@pmc
-	ldx #@mc
-	ldy #@mc>>8
+:pmc
+	ldx #:mc
+	ldy #:mc>>8
 	jsr print_str_xy	
 	jmp print_cr
 
-@t
+:t
 	db '---',0
 	db 'tcp',0
 	db 'udp',0
@@ -640,10 +633,10 @@ do_xtra_sn_mr	module
 	db 'ppp',0
 	db '???',0
 
-@multi	db ' multi',0
-@mf	db ' mf',0
-@nd	db ' nd',0
-@mc	db ' mc',0
+:multi	db ' multi',0
+:mf	db ' mf',0
+:nd	db ' nd',0
+:mc	db ' mc',0
 
 
 
@@ -655,36 +648,36 @@ do_xtra_sn_ir	module
 
 	lda #'-'
 	ldx #7
-@loop1	sta @str+1,x
+:loop1	sta :str+1,x
 	dex
-	bpl @loop1
+	bpl :loop1
 
 
 	lda scratch
 	ldx #7
 
-@loop2
+:loop2
 	lsr
-	bcc @next
+	bcc :next
 
 	phx
 	pha
 	txa
-	lda @t,x
-	sta @str+1,x
+	lda :t,x
+	sta :str+1,x
 	pla
 	plx
 
-@next	dex
-	bpl @loop2
+:next	dex
+	bpl :loop2
 
-	ldx #@str
-	ldy #@str>>8
+	ldx #:str
+	ldy #:str>>8
 	jsr print_str_xy
 	jmp print_cr
 
-@t	db '???STRDC'
-@str	db ' --------',0
+:t	db '???STRDC'
+:str	db ' --------',0
 
 	modend
 
@@ -693,36 +686,36 @@ do_xtra_ir	module
 
 	lda #'-'
 	ldx #7
-@loop1	sta @str+1,x
+:loop1	sta :str+1,x
 	dex
-	bpl @loop1
+	bpl :loop1
 
 
 	lda scratch
 	ldx #7
 
-@loop2
+:loop2
 	lsr
-	bcc @next
+	bcc :next
 
 	phx
 	pha
 	txa
-	lda @t,x
-	sta @str+1,x
+	lda :t,x
+	sta :str+1,x
 	pla
 	plx
 
-@next	dex
-	bpl @loop2
+:next	dex
+	bpl :loop2
 
-	ldx #@str
-	ldy #@str>>8
+	ldx #:str
+	ldy #:str>>8
 	jsr print_str_xy
 	jmp print_cr
 
-@t	db 'CUP?3210'
-@str	db ' --------',0
+:t	db 'CUP?3210'
+:str	db ' --------',0
 
 	modend
 
@@ -733,8 +726,8 @@ display_common	module
 
 	stz page
 
-	ldx #@header
-	ldy #@header>>8
+	ldx #:header
+	ldy #:header>>8
 	jsr print_header
 
 
@@ -743,49 +736,49 @@ display_common	module
 	sta >IDM_AR+1
 
 	ldx #0
-@loop
-	lda @table,x
+:loop
+	lda :table,x
 	sta ptr
-	lda @table+1,x
+	lda :table+1,x
 	sta ptr+1
 	ora ptr
-	beq @done
+	beq :done
 	phx
 	jsr print_register
 	plx
 	inx
 	inx
-	bra @loop
+	bra :loop
 
-@done
+:done
 	rts
 ;	jmp print_footer
 
-@table
-	dw @r0,@r1,@r2,@r3,@r4,@r5,@r6,@r7,@r8
-	dw @r9,@r10,@r11,@r12,@r13,@r14,@r15
+:table
+	dw :r0,:r1,:r2,:r3,:r4,:r5,:r6,:r7,:r8
+	dw :r9,:r10,:r11,:r12,:r13,:r14,:r15
 	dw 0
 
 
 ;; offset, c-string, offset, bytes,
-@r0	db	$00,"MR:             ",$81,XTRA_MR
-@r1	db	$01,"Gateway:        ",$84,0
-@r2	db	$05,"Subnet:         ",$84,0
-@r3	db	$09,"MAC:            ",$86,0
-@r4	db	$0f,"IP:             ",$84,0
-@r5	db	$15,"IR:             ",$81,XTRA_IR
-@r6	db	$16,"IMR:            ",$81,0
-@r7	db	$17,"RTR:            ",$82,XTRA_DEC
-@r8	db 	$19,"RCR             ",$81,XTRA_DEC
-@r9	db	$1a,"RMSR:           ",$81,0
-@r10	db	$1b,"TMSR:           ",$81,0
-@r11	db	$2a,"U IP:           ",$84,0
-@r12	db	$2e,"U Port:         ",$82,XTRA_DEC
-@r13	db	$1c,"PPPoE Auth      ",$82,0 ; intentionally out of order
-@r14	db 	$28,"PPPoE Timer:    ",$81,0
-@r15	db	$29,"PPPoE Magic:    ",$81,0
+:r0	db	$00,"MR:             ",$81,XTRA_MR
+:r1	db	$01,"Gateway:        ",$84,0
+:r2	db	$05,"Subnet:         ",$84,0
+:r3	db	$09,"MAC:            ",$86,0
+:r4	db	$0f,"IP:             ",$84,0
+:r5	db	$15,"IR:             ",$81,XTRA_IR
+:r6	db	$16,"IMR:            ",$81,0
+:r7	db	$17,"RTR:            ",$82,XTRA_DEC
+:r8	db 	$19,"RCR             ",$81,XTRA_DEC
+:r9	db	$1a,"RMSR:           ",$81,0
+:r10	db	$1b,"TMSR:           ",$81,0
+:r11	db	$2a,"U IP:           ",$84,0
+:r12	db	$2e,"U Port:         ",$82,XTRA_DEC
+:r13	db	$1c,"PPPoE Auth      ",$82,0 ; intentionally out of order
+:r14	db 	$28,"PPPoE Timer:    ",$81,0
+:r15	db	$29,"PPPoE Magic:    ",$81,0
 
-@header	db "Common  Registers",0
+:header	db "Common  Registers",0
 	modend
 
 
@@ -793,13 +786,13 @@ print_socket_header
 
 	and #$03
 	ora #$30
-	sta @header+7
+	sta :header+7
 
-	ldx #@header
-	ldy #@header>>8
+	ldx #:header
+	ldy #:header>>8
 	jmp print_header
 
-@header db "Socket 0 Registers",0
+:header db "Socket 0 Registers",0
 
 
 display_0
@@ -854,52 +847,52 @@ reg
 	sta >IDM_AR+1
 
 	ldx #0
-@loop
-	lda @table,x
+:loop
+	lda :table,x
 	sta ptr
-	lda @table+1,x
+	lda :table+1,x
 	sta ptr+1
 	ora ptr
-	beq @done
+	beq :done
 	phx
 	jsr print_register
 	plx
 	inx
 	inx
-	bra @loop
+	bra :loop
 
-@done
+:done
 	rts
 ;	jmp print_footer
 
-@table
-	dw @r0,@r1,@r2,@r3,@r4,@r5,@r6,@r7,@r8
-	dw @r9,@r10,@r11,@r12,@r13,@r14,@r15,@r16
-	dw @r17,@r18,@r19,@r20
+:table
+	dw :r0,:r1,:r2,:r3,:r4,:r5,:r6,:r7,:r8
+	dw :r9,:r10,:r11,:r12,:r13,:r14,:r15,:r16
+	dw :r17,:r18,:r19,:r20
 	dw 0
 
 ;; c-string, offset, bytes, extra
-@r0	db	$00,"MR:             ",$81,XTRA_SN_MR
-@r1	db	$01,"CR:             ",$81,0
-@r2	db	$02,"IR:             ",$81,XTRA_SN_IR
-@r3	db	$03,"SR:             ",$81,XTRA_SN_SR
-@r4	db	$04,"Port:           ",$82,XTRA_DEC
-@r5	db	$06,"Dest MAC:       ",$86,0
-@r6	db	$0c,"Dest IP:        ",$84,0
-@r7	db	$10,"Dest Port:      ",$82,XTRA_DEC
-@r8	db	$12,"MSS:            ",$82,XTRA_DEC
-@r9	db	$14,"Proto:          ",$81,0
-@r10	db	$15,"TOS:            ",$81,0
-@r11	db	$16,"TTL:            ",$81,0
-@r12	db	$2d,"Fragment:       ",$82,0 ; intentionally out of order
-@r13	db	$1e,"RX Buf Size:    ",$81,0
-@r14	db	$1f,"TX Buf Size:    ",$81,0
-@r15	db	$20,"TX FSR:         ",$82,XTRA_DEC
-@r16	db	$22,"TX RD:          ",$82,0
-@r17	db	$24,"TX WR:          ",$82,0
-@r18	db	$26,"RX RSR:         ",$82,XTRA_DEC
-@r19	db	$28,"RX RD:          ",$82,0
-@r20	db	$2a,"RX WR:          ",$82,0
+:r0	db	$00,"MR:             ",$81,XTRA_SN_MR
+:r1	db	$01,"CR:             ",$81,0
+:r2	db	$02,"IR:             ",$81,XTRA_SN_IR
+:r3	db	$03,"SR:             ",$81,XTRA_SN_SR
+:r4	db	$04,"Port:           ",$82,XTRA_DEC
+:r5	db	$06,"Dest MAC:       ",$86,0
+:r6	db	$0c,"Dest IP:        ",$84,0
+:r7	db	$10,"Dest Port:      ",$82,XTRA_DEC
+:r8	db	$12,"MSS:            ",$82,XTRA_DEC
+:r9	db	$14,"Proto:          ",$81,0
+:r10	db	$15,"TOS:            ",$81,0
+:r11	db	$16,"TTL:            ",$81,0
+:r12	db	$2d,"Fragment:       ",$82,0 ; intentionally out of order
+:r13	db	$1e,"RX Buf Size:    ",$81,0
+:r14	db	$1f,"TX Buf Size:    ",$81,0
+:r15	db	$20,"TX FSR:         ",$82,XTRA_DEC
+:r16	db	$22,"TX RD:          ",$82,0
+:r17	db	$24,"TX WR:          ",$82,0
+:r18	db	$26,"RX RSR:         ",$82,XTRA_DEC
+:r19	db	$28,"RX RD:          ",$82,0
+:r20	db	$2a,"RX WR:          ",$82,0
 
 
 display_tx
@@ -908,8 +901,8 @@ display_tx
 	sta page
 
 
-	ldx #@header
-	ldy #@header>>8
+	ldx #:header
+	ldy #:header>>8
 	jsr print_header
 
 	lda #$40
@@ -918,7 +911,7 @@ display_tx
 	sta >IDM_AR+1
 
 	bra dump_common
-@header db "Transmit Buffer",0
+:header db "Transmit Buffer",0
 
 
 
@@ -927,8 +920,8 @@ display_rx
 	lda #PAGE_RX
 	sta page
 
-	ldx #@header
-	ldy #@header>>8
+	ldx #:header
+	ldy #:header>>8
 	jsr print_header
 
 	lda #$60
@@ -937,7 +930,7 @@ display_rx
 	sta >IDM_AR+1
 
 	bra dump_common
-@header db "Receive Buffer",0
+:header db "Receive Buffer",0
 
 
 dump_common
@@ -947,7 +940,7 @@ dump_common
 	stz screen_x
 
 	ldy #8
-@yloop
+:yloop
 	phy
 
 	lda >IDM_AR
@@ -959,28 +952,28 @@ dump_common
 	inc screen_x
 
 	ldx #8
-@xloop1
+:xloop1
 	lda >IDM_DR
 	sta xbuffer,x
 	phx
 	jsr print_hex
 	plx
 	dex
-	bne @xloop1
+	bne :xloop1
 
 ;	lda #' '
 ;	jsr print
 	inc screen_x
 
 	ldx #8
-@xloop2
+:xloop2
 	lda >IDM_DR
 	sta xbuffer+8,x
 	phx
 	jsr print_hex
 	plx
 	dex
-	bne @xloop2
+	bne :xloop2
 
 	jsr print_cr
 
@@ -988,40 +981,40 @@ dump_common
 	lda #5
 	sta screen_x
 	ldx #8
-@xloop3
+:xloop3
 	phx
 	lda xbuffer,x
-	jsr @printc
+	jsr :printc
 	plx
 	dex
-	bne @xloop3
+	bne :xloop3
 
 	inc screen_x
 	ldx #8
-@xloop4
+:xloop4
 	phx
 	lda xbuffer+8,x
-	jsr @printc
+	jsr :printc
 	plx
 	dex
-	bne @xloop4
+	bne :xloop4
 	jsr print_cr
 
 	ply
 	dey
-	bne @yloop
+	bne :yloop
 
 	rts
 ;	jmp print_footer
 
-@printc
+:printc
 	inc screen_x
 	cmp #$7f
-	bcs @noc
+	bcs :noc
 	cmp #$20
-	bcc @noc
+	bcc :noc
 	jmp print
-@noc
+:noc
 	lda #'.'
 	jmp print
 
@@ -1036,10 +1029,10 @@ set_memory
 	ldy #23*2
 	sty screen_y
 	jsr readline
-	bcc @ok
-@err
+	bcc :ok
+:err
 	jmp refresh
-@ok
+:ok
 
 
 ;
@@ -1048,19 +1041,19 @@ set_memory
 ; or xxxx: xx xxx
 
 
-	jsr @read.addr
-	bcs @errbeep
+	jsr :read.addr
+	bcs :errbeep
 
-@loop
+:loop
 	iny
 	lda line,y
-	beq @end
+	beq :end
 	cmp #' '+1
-	bcc @loop ; ws
+	bcc :loop ; ws
 	jsr is_x
-	bcs @errbeep
+	bcs :errbeep
 	ldx tmp+1
-	bne @store
+	bne :store
 
 	asl
 	asl
@@ -1069,58 +1062,58 @@ set_memory
 	sta tmp
 	sec
 	ror tmp+1
-	bra @loop
+	bra :loop
 
 
-@store	ora tmp
+:store	ora tmp
 	sta >IDM_DR
 	stz tmp
 	stz tmp+1
-	bra @loop
+	bra :loop
 
-@errbeep
+:errbeep
 	_beep
 
-@end
+:end
 	; reset MR just in case
 	lda >IDM_OR
 	ora #$03
 	sta >IDM_OR
 	jmp refresh
 
-@read.addr
+:read.addr
 	stz tmp
 	stz tmp+1
 
 	ldy #0
-	jsr @read.one
-	bcs @rts
+	jsr :read.one
+	bcs :rts
 	lda line,y
 	cmp #':'
-	bne @16
-@ar1	lda tmp
+	bne :16
+:ar1	lda tmp
 	sta >IDM_AR+1
 ;	iny
 	clc
 
-@rts	rts
+:rts	rts
 
-@16
+:16
 	lda tmp
 	sta >IDM_AR
-	jsr @read.one
-	bcs @rts
+	jsr :read.one
+	bcs :rts
 
 	lda line,y
 	cmp #':'
-	beq @ar1
+	beq :ar1
 	sec
 	rts
 
-@read.one
+:read.one
 	lda line,y
 	jsr is_x
-	bcs @rts
+	bcs :rts
 	asl
 	asl
 	asl
@@ -1129,7 +1122,7 @@ set_memory
 	iny
 	lda line,y
 	jsr is_x
-	bcs @rts
+	bcs :rts
 	tsb tmp
 	iny
 	rts
@@ -1140,29 +1133,29 @@ set_memory
 ;
 is_x
 	cmp #'0'
-	bcc @no
+	bcc :no
 	cmp #'9'+1
-	bcc @num
+	bcc :num
 	cmp #'A'
-	bcc @no
+	bcc :no
 	cmp #'F'+1
-	bcc @letter
+	bcc :letter
 	cmp #'a'
-	bcc @no
+	bcc :no
 	cmp #'f'+1
-	bcs @no
-@letter
+	bcs :no
+:letter
 	and #$0f
 	clc
 	adc #9
 	rts
 
-@num	and #$0f
+:num	and #$0f
 	clc
 	rts
 
 
-@no	lda #-1
+:no	lda #-1
 	sec
 	rts
 
@@ -1187,19 +1180,19 @@ screen_clear
 	ldy #24*2
 	ldx #0
 
-@loop
+:loop
 	lda screen_table,y
-	sta @smh+1
+	sta :smh+1
 	lda #$a0a0
 	ldx #40-2
-@smh	sta >$e00000,x
+:smh	sta >$e00000,x
 	dex
 	dex
-	bpl @smh
+	bpl :smh
 
 	dey
 	dey
-	bpl @loop
+	bpl :loop
 
 
 	short m,x
@@ -1211,13 +1204,13 @@ line_clear
 
 	ldy screen_y
 	lda screen_table,y
-	sta @smh+1
+	sta :smh+1
 	lda #$a0a0
 	ldx #40-2
-@smh	sta >$e00000,x
+:smh	sta >$e00000,x
 	dex
 	dex
-	bpl @smh
+	bpl :smh
 
 	short m,x
 	rts
@@ -1228,19 +1221,19 @@ print
 
 	ldx screen_x
 	cpx #40
-	bcc @ok
+	bcc :ok
 	rts
-@ok
+:ok
 	ora #$80
 	pha ; save
 	ldy screen_y
 	lda screen_table,y
-	sta @smh+1
+	sta :smh+1
 	lda screen_table+1,y
-	sta @smh+2
+	sta :smh+2
 
 	pla
-@smh	sta >$e00000,x
+:smh	sta >$e00000,x
 	inc screen_x
 	rts
 
@@ -1258,15 +1251,15 @@ print_str_xy
 print_str
 	mx %11
 	ldy #0
-@loop
+:loop
 	lda (str_ptr),y
-	beq @rts
+	beq :rts
 	phy
 	jsr print
 	ply
 	iny
-	bra @loop
-@rts	rts
+	bra :loop
+:rts	rts
 
 print_dec
 	; dibble-dabbble
@@ -1279,13 +1272,13 @@ print_dec
 	stz <bcd
 	stz <bcd+2
 	sed
-@loop
+:loop
 	asl <tmp
 	lda <bcd
 	adc <bcd
 	sta <bcd
 	dex
-	bne @loop
+	bne :loop
 	cld
 
 	short m,x
@@ -1303,7 +1296,7 @@ print_dec_16
 	stz bcd+2
 	ldx #16
 	sed
-@loop
+:loop
 	asl <tmp
 	lda <bcd
 	adc <bcd
@@ -1312,7 +1305,7 @@ print_dec_16
 	adc <bcd+2
 	sta <bcd+2
 	dex
-	bne @loop
+	bne :loop
 	cld
 	short m,x
 	; drop through...
@@ -1320,51 +1313,51 @@ print_dec_16
 print_dec_helper
 	; prints bcd number in <bcd
 	clv
-@5
+:5
 	lda bcd+2
-	beq @4
+	beq :4
 	ora #'0'
 	jsr print
-	bit @rts ; sev
-@4
+	bit :rts ; sev
+:4
 	lda bcd+1
 	lsr
 	lsr
 	lsr
 	lsr
-	bvs @4a
-	beq @3
-@4a	ora #'0'
+	bvs :4a
+	beq :3
+:4a	ora #'0'
 	jsr print
-	bit @rts ; sev
+	bit :rts ; sev
 
-@3
+:3
 	lda bcd+1
 	and #$0f
-	bvs @3a
-	beq @2
-@3a	ora #'0'
+	bvs :3a
+	beq :2
+:3a	ora #'0'
 	jsr print
-	bit @rts ; sev
+	bit :rts ; sev
 
-@2
+:2
 	lda bcd
 	lsr
 	lsr
 	lsr
 	lsr
-	bvs @2a
-	beq @1
-@2a	ora #'0'
+	bvs :2a
+	beq :1
+:2a	ora #'0'
 	jsr print
-	bit @rts ; sev
+	bit :rts ; sev
 
-@1
+:1
 	lda bcd
 	and #$0f
 	ora #'0'
 	jsr print
-@rts	rts
+:rts	rts
 
 
 print_hex
@@ -1376,15 +1369,15 @@ print_hex
 	lsr
 	lsr
 	tax
-	lda @hex,x
+	lda :hex,x
 	jsr print
 	pla
 	and #$0f
 	tax
-	lda @hex,x
+	lda :hex,x
 	jmp print
 
-@hex	db '0123456789abcdef'
+:hex	db '0123456789abcdef'
 
 screen_table
 
@@ -1407,43 +1400,43 @@ readline	module
 	jsr print
 	dec screen_x
 
-@read	lda >$e0c000
-	bpl @read
+:read	lda >$e0c000
+	bpl :read
 	sta >$e0c010
 	and #$7f
 
 	cmp #$20
-	blt @ctrl
+	blt :ctrl
 
 	cmp #$7f
-	beq @bs
+	beq :bs
 
 
 	ldy line_length
 	cpy #38
-	bcs @overflow
+	bcs :overflow
 	sta line,y
 	inc line_length
 	jsr print
 	lda #'_'
 	jsr print
 	dec screen_x
-	bra @read
-@overflow
+	bra :read
+:overflow
 	; beep?
 	_beep
-	bra @read
+	bra :read
 
-@ctrl
+:ctrl
 	cmp #$08 ; backspace
-	beq @bs
+	beq :bs
 	cmp #$1b ; escape
-	beq @esc
+	beq :esc
 	cmp #$17
-	beq @w
+	beq :w
 	cmp #$0d ; cr
-	bne @read
-@cr
+	bne :read
+:cr
 	ldy line_length
 	lda #0
 	sta line,y
@@ -1451,9 +1444,9 @@ readline	module
 	clc
 	rts
 
-@bs
+:bs
 	ldy line_length
-	beq @read ; beep?
+	beq :read ; beep?
 	dec line_length
 	dec screen_x
 	lda #'_'
@@ -1462,15 +1455,15 @@ readline	module
 	jsr print
 	dec screen_x
 	dec screen_x
-	bra @read
+	bra :read
 
-@esc
+:esc
 	sec
 	rts
 
 ; control-w - delete word.
-@w
-	bra @read
+:w
+	bra :read
 
 	modend
 
