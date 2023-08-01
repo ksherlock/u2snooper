@@ -19,6 +19,11 @@ KEY_DOWN	equ $0a
 KEY_ESC		equ $1b	
 
 
+KBD		equ $e0c000
+KBDSTRB		equ $e0c010
+KEYMODREG	equ $e0c025
+
+
 ; direct page
 ; rw = reserve word
 ; uses the __rs variable.
@@ -933,6 +938,10 @@ display_rx
 :header db "Receive Buffer",0
 
 
+;
+; todo -- need to save and restore the original address so re-display after set-memory doesn't jump all over.
+;
+;
 dump_common
 
 	ldy #4
@@ -1039,6 +1048,9 @@ set_memory
 ; expected format:
 ; xx: xx xx xx xx.  space is optional
 ; or xxxx: xx xxx
+;
+; todo -- support for "ascii strings"
+;
 
 
 	jsr :read.addr
@@ -1396,6 +1408,9 @@ readline	module
 	; need to erase line...
 	jsr line_clear
 
+	lda #':'
+	jsr print ; indicate we've switched modes...
+
 	lda #'_'
 	jsr print
 	dec screen_x
@@ -1428,14 +1443,11 @@ readline	module
 	bra :read
 
 :ctrl
-	cmp #$08 ; backspace
-	beq :bs
-	cmp #$1b ; escape
-	beq :esc
-	cmp #$17
-	beq :w
-	cmp #$0d ; cr
-	bne :read
+	asl
+	tax
+	lda >$e0c025 ; key mod
+	jmp (:ctrl_table,x)
+
 :cr
 	ldy line_length
 	lda #0
@@ -1461,9 +1473,54 @@ readline	module
 	sec
 	rts
 
-; control-w - delete word.
+; todo -- control-w - delete word.
 :w
+:nop	bra :read
+
+; control-u is line kill ... but it's also right arrow so check the bits.
+:u
+	bit #%00000010 ; a = keymod, check the control key
+	beq :read
+
+	brl readline
+
+
 	bra :read
+
+
+:ctrl_table
+	dw :nop		; 00 ^@
+	dw :nop		; 01 ^a
+	dw :nop		; 02 ^b
+	dw :nop		; 03 ^c
+	dw :nop		; 04 ^d
+	dw :nop		; 05 ^e
+	dw :nop		; 06 ^f
+	dw :nop		; 07 ^g
+	dw :bs		; 08 ^h <-
+	dw :nop		; 09 ^i
+	dw :nop		; 0a ^j
+	dw :nop		; 0b ^k
+	dw :nop		; 0c ^l
+	dw :cr		; 0d ^m cr
+	dw :nop		; 0e ^n
+	dw :nop		; 0f ^o
+	dw :nop		; 10 ^p
+	dw :nop		; 11 ^q
+	dw :nop		; 12 ^r
+	dw :nop		; 13 ^s
+	dw :nop		; 14 ^t
+	dw :u		; 15 ^u ->
+	dw :nop		; 16 ^v
+	dw :w		; 17 ^w
+	dw :nop		; 18 ^x
+	dw :nop		; 19 ^y
+	dw :nop		; 1a ^z
+	dw :esc		; 1b ^[ esc
+	dw :nop		; 1c ^\
+	dw :nop		; 1d ^]
+	dw :nop		; 1e ^^
+	dw :nop		; 1f ^_
 
 	modend
 
