@@ -1445,7 +1445,6 @@ readline	module
 :ctrl
 	asl
 	tax
-	lda >$e0c025 ; key mod
 	jmp (:ctrl_table,x)
 
 :cr
@@ -1469,23 +1468,65 @@ readline	module
 	dec screen_x
 	bra :read
 
+:nop	bra :read
+
 :esc
 	sec
 	rts
 
-; todo -- control-w - delete word.
-:w
-:nop	bra :read
 
 ; control-u is line kill ... but it's also right arrow so check the bits.
 :u
-	bit #%00000010 ; a = keymod, check the control key
+	lda >$e0c025 ; key mod
+	and #%00000010 ; check the control key
 	beq :read
 
 	brl readline
 
+; todo -- control-w - delete word.
+:w
+; (cursor can only be at the end of the buffer)
+; 1. gobble up any trailing whitespace
+; 2. gobble up any non-whitespace
+; 3. erase old data
 
-	bra :read
+	ldx line_length
+	beq :read
+
+:w1
+	lda line-1,x
+	cmp #' '+1
+	bcs :w2
+	dex
+	bne :w1
+	brl readline ; buffer - kill it
+
+:w2	; found a non-whitespace character.
+	lda line-1,x
+	cmp #' '+1
+	bcc :w3
+	dex
+	bne :w2
+	brl readline ; empty buffer - kill it
+
+:w3	; we found our new position...
+	stx line_length
+	stz line,x
+
+	jsr line_clear
+	stz screen_x
+
+	lda #':'
+	jsr print
+	ldx #line
+	ldy #line>>8
+	jsr print_str_xy
+	lda #'_'
+	jsr print
+	dec screen_x
+	brl :read
+
+
 
 
 :ctrl_table
@@ -1513,7 +1554,7 @@ readline	module
 	dw :u		; 15 ^u ->
 	dw :nop		; 16 ^v
 	dw :w		; 17 ^w
-	dw :nop		; 18 ^x
+	dw :w		; 18 ^x ; gno/me compatibility
 	dw :nop		; 19 ^y
 	dw :nop		; 1a ^z
 	dw :esc		; 1b ^[ esc
