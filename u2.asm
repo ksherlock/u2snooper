@@ -1053,26 +1053,22 @@ set_memory
 	beq :end
 	cmp #' '+1
 	bcc :loop ; ws
-	jsr is_x
+	cmp #'"'
+	beq :qloop
+	jsr :read.one
 	bcs :errbeep
-	ldx tmp+1
-	bne :store
-
-	asl
-	asl
-	asl
-	asl
-	sta tmp
-	sec
-	ror tmp+1
-	bra :loop
-
-
-:store	ora tmp
 	sta >IDM_DR
-	stz tmp
-	stz tmp+1
 	bra :loop
+
+:qloop
+	iny
+	lda line,y
+	beq :end
+	cmp #'"'
+	beq :loop
+	sta >IDM_DR
+	bra :qloop
+
 
 :errbeep
 	_beep
