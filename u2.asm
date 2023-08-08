@@ -359,7 +359,7 @@ display_help
 
 
 
-print_register	module
+print_register
 	mx %11
 
 	lda (ptr)
@@ -402,6 +402,8 @@ table
 	dw :rts
 	dw byte6
 
+:rts
+	rts
 
 XTRA_NOP	equ 0
 XTRA_DEC	equ 2
@@ -420,9 +422,7 @@ extra	dw print_cr
 	dw do_xtra_sn_ir
 	dw do_xtra_sn_sr
 
-:rts
-	rts
-	modend
+
 
 byte1
 	stz scratch+1 ; so XTRA_DEC will work
@@ -474,7 +474,7 @@ do_xtra_dec
 	jsr print
 	jmp print_cr
 
-do_xtra_sn_sr	module
+do_xtra_sn_sr
 	; print the socket status
 	lda #' '
 	jsr print
@@ -517,10 +517,9 @@ do_xtra_sn_sr	module
 :l1b	db 'time wait',0
 :l1d	db 'last ack',0
 :l01	db 'arp',0
-	modend
 
 
-do_xtra_mr	module
+do_xtra_mr
 ; bit 7 (reset) should never be set (if this is an u2)
 
 	bit scratch
@@ -567,9 +566,8 @@ do_xtra_mr	module
 :ai	db " ai",0
 :ind	db " ind",0
 
-	modend
 
-do_xtra_sn_mr	module
+do_xtra_sn_mr
 	mx %11
 
 	lda #' '
@@ -645,10 +643,7 @@ do_xtra_sn_mr	module
 
 
 
-	modend
-
-
-do_xtra_sn_ir	module
+do_xtra_sn_ir
 	mx %11
 
 	lda #'-'
@@ -684,9 +679,8 @@ do_xtra_sn_ir	module
 :t	db '???STRDC'
 :str	db ' --------',0
 
-	modend
 
-do_xtra_ir	module
+do_xtra_ir
 	mx %11
 
 	lda #'-'
@@ -722,11 +716,9 @@ do_xtra_ir	module
 :t	db 'CUP?3210'
 :str	db ' --------',0
 
-	modend
 
 
-
-display_common	module
+display_common
 	mx %11
 
 	stz page
@@ -784,7 +776,6 @@ display_common	module
 :r15	db	$29,"PPPoE Magic:    ",$81,0
 
 :header	db "Common  Registers",0
-	modend
 
 
 print_socket_header
@@ -1398,7 +1389,7 @@ screen_table
 	dw $450,$4d0,$550,$5d0,$650,$6d0,$750,$7d0
 
 
-readline	module
+readline
 	mx %11
 
 	stz line_length
@@ -1563,7 +1554,6 @@ readline	module
 	dw :nop		; 1e ^^
 	dw :nop		; 1f ^_
 
-	modend
 
 
 	section Data
